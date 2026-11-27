@@ -9,7 +9,8 @@ import { findRegularPayments } from './recurring.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const db = openDb();
-const page = readFileSync(new URL('./page.html', import.meta.url), 'utf8');
+// Read on every request so page changes show up with a browser refresh.
+const page = () => readFileSync(new URL('./page.html', import.meta.url), 'utf8');
 
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -34,7 +35,7 @@ function send(res, status, body, type = 'application/json') {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    if (req.method === 'GET' && url.pathname === '/') return send(res, 200, page, 'text/html; charset=utf-8');
+    if (req.method === 'GET' && url.pathname === '/') return send(res, 200, page(), 'text/html; charset=utf-8');
 
     if (req.method === 'GET' && url.pathname === '/api/report') {
       const month = url.searchParams.get('month') ?? months(db)[0] ?? currentMonth();
