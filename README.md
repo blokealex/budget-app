@@ -43,6 +43,10 @@ The first time it runs, the app copies `config/*.example.json` to `config/budget
 - Refunds are deducted from their category's spending.
 - Rows highlighted in amber are uncategorised. Clear those first after each import.
 
+## Year view
+
+Switch to **Year** at the top for this calendar year, this tax year (from 6 April) or the last 12 months. It shows each category month by month, with totals and monthly averages. A month that's noticeably above a category's average is shaded, and clicking any cell opens that month with the category expanded. Averages only count months that have transactions.
+
 ## Project layout
 
 ```
@@ -51,6 +55,7 @@ src/db.js          SQLite storage + duplicate detection
 src/config.js      rules & budgets
 src/report.js      targets vs actual, usual spend
 src/recurring.js   regular payment detection
+src/year.js        year / tax-year / last-12-months totals
 src/server.js      local web server + JSON API
 src/page.html      the dashboard
 test/              npm test

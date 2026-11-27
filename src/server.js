@@ -6,6 +6,7 @@ import { openDb, insertTransactions, recategoriseAll, setCategory, months } from
 import { loadBudgets, makeCategoriser, addRule, addCategory } from './config.js';
 import { monthReport } from './report.js';
 import { findRegularPayments } from './recurring.js';
+import { yearReport } from './year.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const db = openDb();
@@ -47,6 +48,12 @@ const server = createServer(async (req, res) => {
       ['Income', 'Transfers', 'Uncategorised'].forEach(c => cats.add(c));
       return send(res, 200, { ...report, months: months(db), allCategories: [...cats].sort(),
         regular: findRegularPayments(db) });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/year') {
+      const period = ['calendar', 'tax', 'last12'].includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'calendar';
+      const used = db.prepare('SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL').all().map(r => r.category);
+      return send(res, 200, yearReport(db, period, loadBudgets(), used.filter(c => c !== 'Uncategorised')));
     }
 
     if (req.method === 'POST' && url.pathname === '/api/import') {

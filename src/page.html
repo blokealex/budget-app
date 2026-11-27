@@ -14,6 +14,7 @@
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
   main { max-width: 920px; margin: 0 auto; padding: 24px 16px 64px; }
+  main.wide { max-width: 1240px; }
   header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:20px; }
   h1 { font-size:22px; margin:0; letter-spacing:-.01em; }
   h2 { font-size:15px; margin:0 0 12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
@@ -54,6 +55,19 @@
   .rule label { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
   .rule input[type=checkbox] { margin:0; }
   .rule button { padding:4px 10px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; padding:6px 12px; background:var(--card); }
+  .seg button.on { background:var(--ink); color:var(--bg); }
+  .ytable-wrap { overflow-x:auto; }
+  .ytable { font-size:13px; min-width:720px; }
+  .ytable th, .ytable td { text-align:right; white-space:nowrap; padding:7px 7px; font-variant-numeric:tabular-nums; }
+  .ytable th:first-child, .ytable td:first-child { text-align:left; position:sticky; left:0; background:var(--card); }
+  .ytable td.cell { cursor:pointer; }
+  .ytable td.cell:hover { outline:1px solid var(--muted); outline-offset:-1px; }
+  .ytable td.zero { color:var(--muted); }
+  .ytable td.tot, .ytable th.tot { font-weight:650; border-left:1px solid var(--line); }
+  .ytable tr.foot td { font-weight:600; border-top:2px solid var(--line); }
+  .ytable .tsub { display:block; font-size:11px; font-weight:400; color:var(--muted); }
   #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--bg);
            padding:10px 16px; border-radius:8px; opacity:0; transition:opacity .2s; pointer-events:none; }
   #toast.show { opacity:1; }
@@ -64,9 +78,19 @@
 <body>
 <main>
   <header>
-    <h1>Budget</h1>
+    <div style="display:flex; gap:14px; align-items:center">
+      <h1>Budget</h1>
+      <div class="seg" role="tablist">
+        <button id="viewMonth" class="on" role="tab">Month</button><button id="viewYear" role="tab">Year</button>
+      </div>
+    </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap">
       <select id="month" aria-label="Month"></select>
+      <select id="period" aria-label="Period" hidden>
+        <option value="calendar">This year so far</option>
+        <option value="tax">This tax year so far</option>
+        <option value="last12">Last 12 months</option>
+      </select>
       <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
       <button class="primary" id="importBtn">Import HSBC CSV</button>
     </div>
@@ -80,6 +104,72 @@ const gbp = p => (p < 0 ? '−' : '') + '£' + (Math.abs(p) / 100).toLocaleStrin
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const $ = s => document.querySelector(s);
 let state = null;
+let view = 'month', yearState = null;
+
+function setView(v) {
+  view = v;
+  document.querySelector('main').classList.toggle('wide', v === 'year');
+  $('#viewMonth').classList.toggle('on', v === 'month');
+  $('#viewYear').classList.toggle('on', v === 'year');
+  $('#month').hidden = v !== 'month';
+  $('#period').hidden = v !== 'year';
+  v === 'year' ? loadYear() : load(state?.month);
+}
+
+async function loadYear() {
+  const r = await fetch('/api/year?period=' + $('#period').value);
+  yearState = await r.json();
+  renderYear();
+}
+
+function renderYear() {
+  const y = yearState;
+  const mlabel = m => new Date(m + '-01').toLocaleDateString('en-GB', { month:'short' }) + (y.period !== 'calendar' ? ' ' + m.slice(2, 4) : '');
+  if (!y.dataMonths.length) {
+    $('#app').innerHTML = `<div class="card empty">No transactions in ${esc(y.label.toLowerCase())} yet.</div>`;
+    return;
+  }
+  const t = y.totals;
+  const tiles = `
+    <div class="tiles">
+      <div class="tile"><div class="label">Money in · ${esc(y.label)}</div><div class="value">${gbp(t.income)}</div></div>
+      <div class="tile"><div class="label">Spent</div><div class="value">${gbp(t.spent)}</div></div>
+      <div class="tile"><div class="label">In vs out</div><div class="value ${t.net < 0 ? 'over-text' : ''}">${gbp(t.net)}</div></div>
+      <div class="tile"><div class="label">Average month (${y.dataMonths.length} with data)</div>
+        <div class="value" style="font-size:18px">${gbp(t.avgIncome)} in<br>${gbp(t.avgSpent)} out</div></div>
+    </div>`;
+
+  // Shade each cell by how big it is compared with that category's biggest month,
+  // so spikes stand out.
+  // Only months noticeably above the category's average get shaded, so flat bills stay plain.
+  const cellStyle = (v, avg, max) => {
+    if (v <= avg * 1.15 || max <= avg * 1.15) return '';
+    return `background: color-mix(in srgb, var(--warn) ${Math.round(10 + 35 * (v - avg) / (max - avg))}%, transparent)`;
+  };
+  const whole = p => (p < 0 ? '−' : '') + '£' + Math.round(Math.abs(p) / 100).toLocaleString('en-GB');
+  const head = `<tr><th>Category</th>${y.months.map(m => `<th>${mlabel(m)}</th>`).join('')}<th class="tot">Total</th><th>Avg / month</th></tr>`;
+  const rows = y.categories.map(c => {
+    const max = Math.max(0, ...Object.values(c.byMonth));
+    const cells = y.months.map(m => {
+      const v = c.byMonth[m] ?? 0;
+      return `<td class="cell ${v === 0 ? 'zero' : ''}" data-month="${m}" data-cat="${esc(c.name)}" title="${esc(c.name)}: ${gbp(v)}" style="${cellStyle(v, c.avg, max)}">${v === 0 ? '–' : whole(v)}</td>`;
+    }).join('');
+    const avg = c.target != null
+      ? `<span class="${c.avg > c.target ? 'over-text' : ''}">${gbp(c.avg)}</span><span class="tsub">target ${gbp(c.target)}</span>`
+      : gbp(c.avg);
+    return `<tr><td>${esc(c.name)}</td>${cells}<td class="tot">${whole(c.total)}</td><td>${avg}</td></tr>`;
+  }).join('');
+  const foot = (label, obj, cls = '') => `<tr class="foot"><td>${label}</td>${y.months.map(m => `<td class="${cls}">${obj[m] ? whole(obj[m]) : '–'}</td>`).join('')}`;
+  const net = Object.fromEntries(y.months.map(m => [m, y.income[m] - y.spent[m]]));
+  const footer =
+    foot('Spent', y.spent) + `<td class="tot">${whole(t.spent)}</td><td>${gbp(t.avgSpent)}</td></tr>` +
+    foot('Money in', y.income, 'in') + `<td class="tot">${whole(t.income)}</td><td>${gbp(t.avgIncome)}</td></tr>` +
+    `<tr class="foot"><td>In vs out</td>${y.months.map(m => `<td class="${net[m] < 0 ? 'over-text' : ''}">${y.dataMonths.includes(m) ? whole(net[m]) : '–'}</td>`).join('')}<td class="tot ${t.net < 0 ? 'over-text' : ''}">${whole(t.net)}</td><td></td></tr>`;
+
+  $('#app').innerHTML = tiles + `<div class="card"><h2>By category</h2>
+    <p style="margin:-4px 0 12px;color:var(--muted);font-size:13px">Darker cells are a category's bigger months. Click a cell to open that month.</p>
+    <div class="ytable-wrap"><table class="ytable"><thead>${head}</thead><tbody>${rows}${footer}</tbody></table></div></div>`;
+}
 const expanded = new Set(); // categories opened to show their transactions
 // Descriptions that don't say who was paid (e.g. "GOCARDLESS DD"), so rules use the amount too.
 const GENERIC = ['GOCARDLESS', 'PAYPAL', 'STRIPE', 'SUMUP', 'SQUARE'];
@@ -204,6 +294,16 @@ $('#app').addEventListener('change', async e => {
 });
 
 $('#app').addEventListener('click', async e => {
+  const cell = e.target.closest('td.cell[data-month]');
+  if (cell) {
+    expanded.add(cell.dataset.cat);
+    view = 'month';
+    document.querySelector('main').classList.remove('wide');
+    $('#viewMonth').classList.add('on'); $('#viewYear').classList.remove('on');
+    $('#month').hidden = false; $('#period').hidden = true;
+    load(cell.dataset.month);
+    return;
+  }
   const cat = e.target.closest('.cat[data-cat]');
   if (cat) {
     const name = cat.dataset.cat;
@@ -261,9 +361,12 @@ $('#file').onchange = async e => {
   }
   e.target.value = '';
   toast(`${added} new transactions${dup ? `, ${dup} already imported` : ''}`);
-  load(latest);
+  view === 'year' ? loadYear() : load(latest);
 };
 $('#month').onchange = e => load(e.target.value);
+$('#viewMonth').onclick = () => setView('month');
+$('#viewYear').onclick = () => setView('year');
+$('#period').onchange = loadYear;
 $('#app').addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.cat[data-cat]')) { e.preventDefault(); e.target.click(); }
 });
