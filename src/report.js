@@ -18,7 +18,7 @@ function previousMonths(month, n) {
 function usualSpend(db, month) {
   const prev = previousMonths(month, 3);
   const rows = db.prepare(`SELECT substr(date,1,7) AS m, category, -SUM(amount) AS spent
-    FROM transactions WHERE substr(date,1,7) IN (?, ?, ?)
+    FROM live WHERE substr(date,1,7) IN (?, ?, ?)
     GROUP BY m, category`).all(...prev);
   const monthsWithData = new Set(rows.map(r => r.m)).size;
   const usual = new Map();

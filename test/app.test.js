@@ -22,8 +22,8 @@ test('import, dedupe, report', () => {
     { match: 'TESCO', category: 'Groceries' },
     { match: 'AMZN', category: 'Shopping' },
   ]);
-  assert.deepEqual(insertTransactions(db, transactions, cat), { added: 12, duplicates: 0 });
-  assert.deepEqual(insertTransactions(db, transactions, cat), { added: 0, duplicates: 12 }); // re-import safe
+  assert.deepEqual(insertTransactions(db, transactions, cat), { added: 12, duplicates: 0, filled: 0 });
+  assert.deepEqual(insertTransactions(db, transactions, cat), { added: 0, duplicates: 12, filled: 0 }); // re-import safe
   const r = monthReport(db, '2026-11', { Groceries: 350, Shopping: 50 }, new Date(2026, 10, 26));
   const g = r.categories.find(c => c.name === 'Groceries');
   assert.equal(g.spent, 13028);
@@ -99,4 +99,50 @@ test('GoCardless: rules by amount, and two identical subs count as one regular l
   assert.equal(subs.last, 2600);
   assert.equal(subs.category, 'Kids');
   assert.ok(payments.find(p => p.key === 'GOCARDLESS DD 30.00'));
+});
+
+test('masked midata rows get filled in from a normal CSV instead of duplicated', () => {
+  const db = openDb(':memory:');
+  const cat = makeCategoriser([{ match: 'NETFLIX', category: 'Entertainment' }]);
+  // midata: two masked lines, one normal
+  insertTransactions(db, [
+    { date: '2026-09-03', description: '******', amount: -1799 },
+    { date: '2026-09-03', description: '******', amount: -1799 },
+    { date: '2026-09-04', description: 'TESCO STORES', amount: -4218 },
+  ], cat);
+  // normal CSV covering the same days
+  const r = insertTransactions(db, [
+    { date: '2026-09-03', description: 'NETFLIX.COM', amount: -1799 },
+    { date: '2026-09-03', description: 'DISNEY PLUS', amount: -1799 },
+    { date: '2026-09-04', description: 'TESCO STORES 3297 MANCHESTER', amount: -4218 },
+  ], cat);
+  assert.equal(r.filled, 2);
+  const rows = db.prepare('SELECT description, category FROM live ORDER BY id').all();
+  assert.deepEqual(rows.map(x => x.description), ['NETFLIX.COM', 'DISNEY PLUS', 'TESCO STORES', 'TESCO STORES 3297 MANCHESTER']);
+  assert.equal(rows[0].category, 'Entertainment');
+  // Re-importing either file again changes nothing.
+  assert.equal(insertTransactions(db, [{ date: '2026-09-03', description: 'NETFLIX.COM', amount: -1799 }], cat).duplicates, 1);
+  assert.equal(insertTransactions(db, [{ date: '2026-09-03', description: '******', amount: -1799 }], cat).duplicates, 1);
+});
+
+test('delete, undo, duplicates review', async () => {
+  const { deleteTransaction, restoreTransaction, possibleDuplicates, markNotDuplicates } = await import('../src/db.js');
+  const db = openDb(':memory:');
+  insertTransactions(db, [
+    { date: '2026-09-04', description: 'TESCO STORES', amount: -4218 },
+    { date: '2026-09-04', description: 'TESCO STORES 3297 MANCHESTER', amount: -4218 },
+    { date: '2026-09-05', description: 'GOCARDLESS DD', amount: -1300 },
+    { date: '2026-09-05', description: 'GOCARDLESS DD', amount: -1300 },
+  ], () => 'Food');
+  assert.equal(possibleDuplicates(db).length, 2);
+  markNotDuplicates(db, '2026-09-05', -1300);           // the two Beavers subs
+  const [g] = possibleDuplicates(db);
+  assert.equal(g.transactions.length, 2);
+  deleteTransaction(db, g.transactions[0].id);
+  assert.equal(possibleDuplicates(db).length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM live').get().n, 3);
+  // A deleted row doesn't come back when the same statement is imported again.
+  assert.equal(insertTransactions(db, [{ date: '2026-09-04', description: 'TESCO STORES', amount: -4218 }], () => 'Food').duplicates, 1);
+  restoreTransaction(db, g.transactions[0].id);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM live').get().n, 4);
 });

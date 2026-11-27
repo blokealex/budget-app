@@ -23,6 +23,15 @@ Overlapping statements are fine to import. Transactions you've already imported 
 
 You can also import from the terminal: `npm run import -- ~/Downloads/TransactionHistory.csv`
 
+### Masked midata rows
+
+Midata sometimes hides a description as `******`. Import a normal CSV covering the same days and the app fills those rows in, matching on date and amount, instead of adding duplicates. Categories you've set by hand are kept, and your rules apply to the filled-in description.
+
+### Duplicates and deleting
+
+- If any transactions share the same date and amount, a banner offers to **Review** them. Delete the extra copy, or mark the group as **separate payments** (e.g. two kids' subs on the same day) and it won't be flagged again.
+- Any transaction can be deleted with the **×** at the end of its row. Click once to arm it, then again to delete, and **Undo** is offered straight away. Deleted transactions are hidden rather than erased, so re-importing the same statement won't bring them back.
+
 ## Make it yours
 
 The first time it runs, the app copies `config/*.example.json` to `config/budgets.json` and `config/rules.json`. Those two copies are yours. Git ignores them, so your real figures never go to GitHub. Only the example versions are committed.

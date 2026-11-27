@@ -70,7 +70,17 @@
   .ytable .tsub { display:block; font-size:11px; font-weight:400; color:var(--muted); }
   #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--bg);
            padding:10px 16px; border-radius:8px; opacity:0; transition:opacity .2s; pointer-events:none; }
-  #toast.show { opacity:1; }
+  #toast.show { opacity:1; pointer-events:auto; }
+  #toast button { margin-left:12px; background:transparent; color:inherit; border:1px solid currentColor; padding:3px 10px; }
+  .del { border:0; background:transparent; color:var(--muted); padding:2px 6px; font-size:16px; line-height:1; }
+  .del:hover { color:var(--bad); }
+  .del.armed { color:#fff; background:var(--bad); font-size:13px; border-radius:6px; padding:3px 8px; }
+  .banner { display:flex; justify-content:space-between; align-items:center; gap:12px; background:color-mix(in srgb, var(--warn) 14%, var(--card));
+            border:1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); border-radius:12px; padding:10px 14px; margin-bottom:16px; }
+  .dup-group { border-top:1px solid var(--line); padding:12px 0; }
+  .dup-group:first-of-type { border-top:0; }
+  .dup-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; font-weight:600; }
+  .dup-group table td { border-top:0; padding:5px 6px; }
   .empty { text-align:center; padding:40px 16px; color:var(--muted); }
   @media (max-width: 600px) { .cat { grid-template-columns: 1fr 120px; } .cat .track { grid-column: 1 / -1; order:3; } }
 </style>
@@ -105,6 +115,23 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>
 const $ = s => document.querySelector(s);
 let state = null;
 let view = 'month', yearState = null;
+
+async function loadDups() {
+  view = 'dups';
+  const { groups } = await (await fetch('/api/duplicates')).json();
+  if (!groups.length) { setView('month'); return; } // keep any Undo toast showing
+  const day = d => new Date(d).toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+  $('#app').innerHTML = `<div class="card">
+    <div class="dup-head" style="margin-bottom:4px"><h2 style="margin:0">Possible duplicates</h2><button id="backToMonth">Back</button></div>
+    <p style="margin:0 0 8px;color:var(--muted);font-size:13px">Transactions with the same date and amount. Delete any extra copies, or mark the group as separate payments (e.g. two kids' subs) and it won't be shown again.</p>
+    ${groups.map(g => `<div class="dup-group" data-date="${g.date}" data-amount="${g.amount}">
+      <div class="dup-head"><span>${day(g.date)} · ${gbp(g.amount)} · ${g.transactions.length} transactions</span>
+        <button class="notDup">They're separate payments</button></div>
+      <table><tbody>${g.transactions.map(t => `<tr data-id="${t.id}" data-desc="${esc(t.description)}">
+        <td>${esc(t.description)}</td><td style="color:var(--muted)">${esc(t.category ?? '')}</td>
+        <td style="width:1%"><button class="del" title="Delete this one" aria-label="Delete">×</button></td></tr>`).join('')}</tbody></table>
+    </div>`).join('')}</div>`;
+}
 
 function setView(v) {
   view = v;
@@ -174,7 +201,28 @@ const expanded = new Set(); // categories opened to show their transactions
 // Descriptions that don't say who was paid (e.g. "GOCARDLESS DD"), so rules use the amount too.
 const GENERIC = ['GOCARDLESS', 'PAYPAL', 'STRIPE', 'SUMUP', 'SQUARE'];
 
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+let toastTimer;
+function toast(msg, action) {
+  const t = $('#toast');
+  t.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.run(); };
+    t.append(b);
+  }
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), action ? 8000 : 3000);
+}
+
+// Delete with undo. Deleted transactions are hidden, not erased, so they
+// don't come back when the same statement is imported again.
+async function deleteTx(id, desc, after) {
+  await post('/api/delete', { id });
+  toast(`Deleted “${desc}”`, { label: 'Undo', run: async () => { await post('/api/restore', { id }); after(); } });
+  after();
+}
 
 async function load(month) {
   const r = await fetch('/api/report' + (month ? '?month=' + month : ''));
@@ -271,13 +319,17 @@ function render() {
       <td>${esc(t.description)}<div class="rule-slot"></div></td>
       <td><select class="catSel">${opts(t.category)}</select></td>
       <td class="amt ${t.amount > 0 ? 'in' : ''}">${gbp(t.amount)}</td>
+      <td style="width:1%"><button class="del" title="Delete this transaction" aria-label="Delete">×</button></td>
     </tr>`).join('');
 
-  $('#app').innerHTML = tiles +
+  const dupBanner = s.duplicateCount
+    ? `<div class="banner"><span><b>${s.duplicateCount}</b> possible duplicate${s.duplicateCount === 1 ? '' : 's'}: same date and amount</span>
+        <button id="reviewDups">Review</button></div>` : '';
+  $('#app').innerHTML = dupBanner + tiles +
     (targetCats ? `<div class="card"><h2>Targets</h2>${targetCats}</div>` : '') +
     `<div class="card"><h2>Everything else this month</h2>${otherCats}</div>` + regCard +
     `
-     <div class="card"><h2>Transactions</h2><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+     <div class="card"><h2>Transactions</h2><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 $('#app').addEventListener('change', async e => {
@@ -294,6 +346,25 @@ $('#app').addEventListener('change', async e => {
 });
 
 $('#app').addEventListener('click', async e => {
+  if (e.target.id === 'reviewDups') return loadDups();
+  if (e.target.id === 'backToMonth') return setView('month');
+  if (e.target.classList.contains('notDup')) {
+    const g = e.target.closest('.dup-group');
+    await post('/api/not-duplicates', { date: g.dataset.date, amount: Number(g.dataset.amount) });
+    return loadDups();
+  }
+  const del = e.target.closest('.del');
+  if (del) {
+    // Two clicks: the first arms the button, the second deletes.
+    if (!del.classList.contains('armed')) {
+      document.querySelectorAll('.del.armed').forEach(b => { b.classList.remove('armed'); b.textContent = '×'; });
+      del.classList.add('armed'); del.textContent = 'Delete?';
+      setTimeout(() => { del.classList.remove('armed'); del.textContent = '×'; }, 4000);
+      return;
+    }
+    const row = del.closest('tr');
+    return deleteTx(Number(row.dataset.id), row.dataset.desc, () => view === 'dups' ? loadDups() : load(state.month));
+  }
   const cell = e.target.closest('td.cell[data-month]');
   if (cell) {
     expanded.add(cell.dataset.cat);
@@ -351,16 +422,16 @@ async function post(url, body) {
 
 $('#importBtn').onclick = () => $('#file').click();
 $('#file').onchange = async e => {
-  let latest = null, added = 0, dup = 0;
+  let latest = null, added = 0, dup = 0, filled = 0;
   for (const f of e.target.files) {
     try {
       const j = await post('/api/import', await f.text());
-      added += j.added; dup += j.duplicates;
+      added += j.added; dup += j.duplicates; filled += j.filled ?? 0;
       if (!latest || j.latestMonth > latest) latest = j.latestMonth;
     } catch (err) { toast(`${f.name}: ${err.message}`); return; }
   }
   e.target.value = '';
-  toast(`${added} new transactions${dup ? `, ${dup} already imported` : ''}`);
+  toast(`${added} new transactions${filled ? `, ${filled} masked one${filled === 1 ? '' : 's'} filled in` : ''}${dup ? `, ${dup} already imported` : ''}`);
   view === 'year' ? loadYear() : load(latest);
 };
 $('#month').onchange = e => load(e.target.value);

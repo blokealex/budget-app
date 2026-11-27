@@ -22,7 +22,7 @@ const monthIndex = ym => { const [y, m] = ym.split('-').map(Number); return y * 
 
 export function findRegularPayments(db) {
   const rows = db.prepare(`SELECT id, date, description, amount, category
-    FROM transactions WHERE amount < 0 AND category != 'Transfers' ORDER BY date, id`).all();
+    FROM live WHERE amount < 0 AND category != 'Transfers' ORDER BY date, id`).all();
   if (!rows.length) return { payments: [], monthlyTotal: 0, latestMonth: null };
   const latestMonth = rows.at(-1).date.slice(0, 7);
 

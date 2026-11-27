@@ -2,7 +2,8 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { parseStatement } from './csv.js';
-import { openDb, insertTransactions, recategoriseAll, setCategory, months } from './db.js';
+import { openDb, insertTransactions, recategoriseAll, setCategory, months,
+  deleteTransaction, restoreTransaction, possibleDuplicates, markNotDuplicates } from './db.js';
 import { loadBudgets, makeCategoriser, addRule, addCategory } from './config.js';
 import { monthReport } from './report.js';
 import { findRegularPayments } from './recurring.js';
@@ -42,17 +43,17 @@ const server = createServer(async (req, res) => {
       const month = url.searchParams.get('month') ?? months(db)[0] ?? currentMonth();
       const budgets = loadBudgets();
       // Every category ever used, so ones you've created (e.g. "Work") are available in every month.
-      const used = db.prepare('SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL').all().map(r => r.category);
+      const used = db.prepare('SELECT DISTINCT category FROM live WHERE category IS NOT NULL').all().map(r => r.category);
       const report = monthReport(db, month, budgets, new Date(), used);
       const cats = new Set([...(budgets._categories ?? []), ...Object.keys(budgets).filter(k => !k.startsWith('_')), ...used]);
       ['Income', 'Transfers', 'Uncategorised'].forEach(c => cats.add(c));
       return send(res, 200, { ...report, months: months(db), allCategories: [...cats].sort(),
-        regular: findRegularPayments(db) });
+        regular: findRegularPayments(db), duplicateCount: possibleDuplicates(db).length });
     }
 
     if (req.method === 'GET' && url.pathname === '/api/year') {
       const period = ['calendar', 'tax', 'last12'].includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'calendar';
-      const used = db.prepare('SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL').all().map(r => r.category);
+      const used = db.prepare('SELECT DISTINCT category FROM live WHERE category IS NOT NULL').all().map(r => r.category);
       return send(res, 200, yearReport(db, period, loadBudgets(), used.filter(c => c !== 'Uncategorised')));
     }
 
@@ -61,6 +62,23 @@ const server = createServer(async (req, res) => {
       const result = insertTransactions(db, transactions, makeCategoriser());
       const latest = transactions.map(t => t.date).sort().at(-1).slice(0, 7);
       return send(res, 200, { ...result, skippedLines, latestMonth: latest });
+    }
+
+    if (req.method === 'POST' && (url.pathname === '/api/delete' || url.pathname === '/api/restore')) {
+      const { id } = JSON.parse(await readBody(req));
+      if (!Number.isInteger(id)) return send(res, 400, { error: 'id required' });
+      (url.pathname === '/api/delete' ? deleteTransaction : restoreTransaction)(db, id);
+      return send(res, 200, { ok: true });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/duplicates') {
+      return send(res, 200, { groups: possibleDuplicates(db) });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/not-duplicates') {
+      const { date, amount } = JSON.parse(await readBody(req));
+      markNotDuplicates(db, date, amount);
+      return send(res, 200, { ok: true });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/category') {

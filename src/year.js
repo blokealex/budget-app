@@ -37,7 +37,7 @@ export function yearReport(db, period, budgets, knownCategories = [], today = ne
   const { from, to, label } = periodRange(period, today);
   const months = monthsBetween(from, to);
   const rows = db.prepare(`SELECT substr(date,1,7) AS m, category, SUM(amount) AS total
-    FROM transactions WHERE date >= ? AND date < ? GROUP BY m, category`).all(from, to);
+    FROM live WHERE date >= ? AND date < ? GROUP BY m, category`).all(from, to);
 
   const income = Object.fromEntries(months.map(m => [m, 0]));
   const spent = Object.fromEntries(months.map(m => [m, 0]));
