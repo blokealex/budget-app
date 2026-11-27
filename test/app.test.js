@@ -74,3 +74,29 @@ test('regular payments: finds bills, ignores the weekly shop, spots changes', as
   assert.equal(by['OLD GYM'].status, 'stopped');
   assert.equal(by['TESCO STORES'], undefined); // weekly shop isn't a bill
 });
+
+test('GoCardless: rules by amount, and two identical subs count as one regular line', async () => {
+  const { findRegularPayments } = await import('../src/recurring.js');
+  const cat = makeCategoriser([
+    { match: 'GOCARDLESS DD', category: 'Kids', amount: 13 },
+    { match: 'GOCARDLESS DD', category: 'Self Care', amount: 30 },
+  ]);
+  assert.equal(cat({ description: 'GOCARDLESS DD', amount: -1300 }), 'Kids');
+  assert.equal(cat({ description: 'GOCARDLESS DD', amount: -3000 }), 'Self Care');
+  assert.equal(cat({ description: 'GOCARDLESS DD', amount: -999 }), 'Uncategorised');
+
+  const db = openDb(':memory:');
+  const tx = [];
+  for (const m of ['2026-08', '2026-09', '2026-10', '2026-11']) {
+    tx.push({ date: `${m}-05`, description: 'GOCARDLESS DD', amount: -1300 });
+    tx.push({ date: `${m}-05`, description: 'GOCARDLESS DD', amount: -1300 });
+    tx.push({ date: `${m}-01`, description: 'GOCARDLESS DD', amount: -3000 });
+  }
+  insertTransactions(db, tx, cat);
+  const { payments } = findRegularPayments(db);
+  const subs = payments.find(p => p.key === 'GOCARDLESS DD 13.00');
+  assert.equal(subs.perMonth, 2);
+  assert.equal(subs.last, 2600);
+  assert.equal(subs.category, 'Kids');
+  assert.ok(payments.find(p => p.key === 'GOCARDLESS DD 30.00'));
+});

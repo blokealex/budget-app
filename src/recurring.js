@@ -1,3 +1,5 @@
+import { isGeneric } from './config.js';
+
 // Works out your real regular payments (direct debits, standing orders,
 // subscriptions) from transaction history, so the app shows what is actually
 // going out rather than what a spreadsheet says should be.
@@ -26,8 +28,10 @@ export function findRegularPayments(db) {
 
   const groups = new Map();
   for (const r of rows) {
-    const key = normalise(r.description);
+    let key = normalise(r.description);
     if (!key) continue;
+    // "GOCARDLESS DD" could be anyone: tell them apart by amount.
+    if (isGeneric(r.description)) key += ' ' + (-r.amount / 100).toFixed(2);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
@@ -36,8 +40,11 @@ export function findRegularPayments(db) {
   for (const [key, txs] of groups) {
     const months = new Set(txs.map(t => t.date.slice(0, 7)));
     if (months.size < 3) continue;                       // needs a pattern
-    if (txs.length / months.size > 1.5) continue;        // weekly shop etc., not a bill
     const amounts = txs.map(t => -t.amount);
+    const perMonth = Math.round(txs.length / months.size);
+    const sameAmount = amounts.every(a => a === amounts[0]);
+    // Weekly shop etc. isn't a bill, but two identical subs on the same day can be.
+    if (txs.length / months.size > 1.5 && !(sameAmount && perMonth <= 3)) continue;
     const usual = median(amounts);
     const similar = amounts.filter(a => Math.abs(a - usual) <= Math.max(200, usual * 0.25)).length;
     if (similar / amounts.length < 0.7) continue;        // amounts all over the place: not a bill
@@ -46,7 +53,8 @@ export function findRegularPayments(db) {
     const lastAmount = -last.amount, prevAmount = -prev.amount;
     const gap = monthIndex(latestMonth) - monthIndex(last.date.slice(0, 7));
     const firstSeen = txs[0].date.slice(0, 7);
-    const change = lastAmount - prevAmount;
+    // Two identical payments a month (e.g. two kids' subs) aren't a price change.
+    const change = perMonth > 1 ? 0 : lastAmount - prevAmount;
 
     let status = 'ok';
     if (gap >= 2) status = 'stopped';
@@ -55,7 +63,8 @@ export function findRegularPayments(db) {
 
     payments.push({
       key, name: last.description, category: last.category,
-      usual, last: lastAmount, change, lastDate: last.date,
+      usual, last: lastAmount * Math.max(1, perMonth), perMonth: Math.max(1, perMonth),
+      change, lastDate: last.date,
       day: median(txs.map(t => Number(t.date.slice(8, 10)))),
       monthsSeen: months.size, firstSeen, status,
     });

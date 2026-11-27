@@ -70,6 +70,8 @@ const gbp = p => (p < 0 ? '−' : '') + '£' + (Math.abs(p) / 100).toLocaleStrin
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const $ = s => document.querySelector(s);
 let state = null;
+// Descriptions that don't say who was paid (e.g. "GOCARDLESS DD"), so rules use the amount too.
+const GENERIC = ['GOCARDLESS', 'PAYPAL', 'STRIPE', 'SUMUP', 'SQUARE'];
 
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
 
@@ -141,7 +143,7 @@ function render() {
   const regRows = reg.payments.map(p => `
     <tr style="${p.status === 'stopped' ? 'opacity:.55' : ''}">
       <td>${esc(p.name)}<div style="color:var(--muted);font-size:12px">${esc(p.category)} · around the ${ord(p.day)} · seen ${p.monthsSeen} months</div></td>
-      <td class="amt">${gbp(p.last)}<div style="font-size:12px">${badge(p)}</div></td>
+      <td class="amt">${gbp(p.last)}<div style="font-size:12px">${p.perMonth > 1 ? `${p.perMonth} × ${gbp(p.last / p.perMonth)}` : badge(p)}</div></td>
     </tr>`).join('');
   const regCard = reg.payments.length
     ? `<div class="card"><h2>Regular payments</h2>
@@ -151,7 +153,7 @@ function render() {
 
   const opts = cat => s.allCategories.map(c => `<option ${c === cat ? 'selected' : ''}>${esc(c)}</option>`).join('') + '<option value="__new">+ New category…</option>';
   const rows = s.transactions.map(t => `
-    <tr class="${t.category === 'Uncategorised' ? 'uncat' : ''}" data-id="${t.id}" data-desc="${esc(t.description)}">
+    <tr class="${t.category === 'Uncategorised' ? 'uncat' : ''}" data-id="${t.id}" data-desc="${esc(t.description)}" data-amount="${t.amount}">
       <td style="white-space:nowrap">${new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}</td>
       <td>${esc(t.description)}<div class="rule-slot"></div></td>
       <td><select class="catSel">${opts(t.category)}</select></td>
@@ -187,9 +189,11 @@ $('#app').addEventListener('click', async e => {
   if (e.target.classList.contains('saveRule')) {
     const rule = tr.querySelector('.ruleText').value.trim();
     const category = tr.querySelector('.ruleText').dataset.cat;
+    const amt = tr.querySelector('.ruleAmt');
+    const ruleAmount = amt.checked ? Number(amt.dataset.amount) : null;
     if (!rule) return;
-    await post('/api/category', { category, rule });
-    toast(`Anything containing “${rule}” is now ${category}`);
+    await post('/api/category', { category, rule, ruleAmount });
+    toast(`Anything containing “${rule}”${ruleAmount != null ? ` for ${gbp(ruleAmount * 100)}` : ''} is now ${category}`);
     load(state.month);
   }
   if (e.target.classList.contains('skipRule')) tr.querySelector('.rule-slot').innerHTML = '';
@@ -200,8 +204,11 @@ async function saveCategory(tr, category) {
   const r = await fetch('/api/report?month=' + state.month); state = await r.json();
   render();
   const row = document.querySelector(`tr[data-id="${tr.dataset.id}"]`);
+  const generic = GENERIC.some(g => tr.dataset.desc.toUpperCase().includes(g));
+  const amount = Math.abs(Number(tr.dataset.amount)) / 100;
   row.querySelector('.rule-slot').innerHTML = `<div class="rule">Always use <b>${esc(category)}</b> for descriptions containing
-    <input class="ruleText" data-cat="${esc(category)}" value="${esc(suggestRule(tr.dataset.desc))}">
+    <input class="ruleText" data-cat="${esc(category)}" value="${esc(generic ? tr.dataset.desc : suggestRule(tr.dataset.desc))}">
+    <label><input type="checkbox" class="ruleAmt" data-amount="${amount}" ${generic ? 'checked' : ''}> only for ${gbp(amount * 100)}</label>
     <button class="saveRule">Save rule</button><button class="skipRule">Just this one</button></div>`;
 }
 

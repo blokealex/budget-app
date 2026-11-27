@@ -30,6 +30,7 @@ The first time it runs, the app copies `config/*.example.json` to `config/budget
 - **`config/budgets.json`** sets your category list (`_categories`) and monthly **targets** for the categories you're actively limiting (e.g. Food). Every other category is compared with what you usually spend (the average of the previous 3 months).
 - **`config/rules.json`** holds the auto-categorisation rules. Each rule is a piece of text, and any description containing it gets that category. The first match wins.
 - In the app, change a transaction's category from its dropdown. You'll then be offered a **Save rule** option so the same kind of transaction gets that category automatically in future. Saved rules are added to `rules.json`.
+- Some payments, like **GOCARDLESS DD**, don't say who they're for. For those, the app offers an **only for £X** option when you save a rule, so each amount can have its own category. Regular payments lists each GoCardless amount separately.
 - Use the category **Transfers** for money moved between your own accounts. Transfers are left out of both spending and income.
 
 ## Reading the dashboard

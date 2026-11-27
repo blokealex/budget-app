@@ -15,20 +15,32 @@ function ensure(path) {
 export const loadRules = () => JSON.parse(readFileSync(ensure(RULES), 'utf8'));
 export const loadBudgets = () => JSON.parse(readFileSync(ensure(BUDGETS), 'utf8'));
 
-export function addRule(match, category) {
+// amount (optional, pounds) narrows a rule to one exact payment amount.
+// Needed for payments like "GOCARDLESS DD" where the description alone
+// doesn't say who it's for.
+export function addRule(match, category, amount) {
   const rules = loadRules();
-  rules.unshift({ match, category }); // newest rule wins
+  const rule = { match, category };
+  if (amount != null && amount !== '') rule.amount = Number(amount);
+  rules.unshift(rule); // newest rule wins
   writeFileSync(RULES, JSON.stringify(rules, null, 2) + '\n');
 }
 
 // First rule whose text appears in the description wins.
 // Money in with no matching rule is "Income"; money out is "Uncategorised".
 export function makeCategoriser(rules = loadRules()) {
-  const compiled = rules.map(r => ({ needle: r.match.toUpperCase(), category: r.category }));
+  const compiled = rules.map(r => ({
+    needle: r.match.toUpperCase(), category: r.category,
+    pence: r.amount != null ? Math.round(Math.abs(r.amount) * 100) : null,
+  }));
   return ({ description, amount }) => {
     const d = description.toUpperCase();
-    const hit = compiled.find(r => d.includes(r.needle));
+    const hit = compiled.find(r => d.includes(r.needle) && (r.pence == null || r.pence === Math.abs(amount)));
     if (hit) return hit.category;
     return amount > 0 ? 'Income' : 'Uncategorised';
   };
 }
+
+// Descriptions that don't identify who was paid; the amount has to.
+export const GENERIC_PAYEES = ['GOCARDLESS', 'PAYPAL', 'STRIPE', 'SUMUP', 'SQUARE'];
+export const isGeneric = description => GENERIC_PAYEES.some(g => description.toUpperCase().includes(g));

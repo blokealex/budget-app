@@ -55,11 +55,11 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/api/category') {
-      const { id, category, rule } = JSON.parse(await readBody(req));
+      const { id, category, rule, ruleAmount } = JSON.parse(await readBody(req));
       if (!category?.trim()) return send(res, 400, { error: 'Category required' });
       if (rule?.trim()) {
         // "Always categorise things like this" — save a rule and apply it everywhere.
-        addRule(rule.trim(), category.trim());
+        addRule(rule.trim(), category.trim(), ruleAmount);
         recategoriseAll(db, makeCategoriser());
       }
       if (id) setCategory(db, id, category.trim());
