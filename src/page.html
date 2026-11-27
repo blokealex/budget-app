@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e4e2dc;
+          --ok:#2f7d4f; --warn:#c07a12; --bad:#b23a2e; --bar:#d9d6ce; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --card:#201f1d; --ink:#eceae4; --muted:#9c9a93; --line:#33322e;
+            --ok:#5cb07e; --warn:#e0a23c; --bad:#e26a5c; --bar:#3a3934; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width: 920px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:20px; }
+  h1 { font-size:22px; margin:0; letter-spacing:-.01em; }
+  h2 { font-size:15px; margin:0 0 12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input { font:inherit; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:7px 10px; }
+  button { cursor:pointer; }
+  button.primary { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:16px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .tile .label { color:var(--muted); font-size:13px; }
+  .tile .value { font-size:24px; font-weight:650; font-variant-numeric:tabular-nums; margin-top:2px; }
+  .cat { display:grid; grid-template-columns: 140px 1fr 150px; gap:12px; align-items:center; padding:7px 0; border-top:1px solid var(--line); }
+  .cat:first-of-type { border-top:0; }
+  .track { position:relative; height:10px; background:var(--bar); border-radius:5px; overflow:hidden; }
+  .fill { position:absolute; inset:0 auto 0 0; border-radius:5px; background:var(--ok); }
+  .fill.ahead { background:var(--warn); } .fill.over { background:var(--bad); } .fill.none { background:var(--muted); }
+  .pace { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink); opacity:.55; }
+  .nums { text-align:right; font-variant-numeric:tabular-nums; font-size:14px; }
+  .nums .sub { color:var(--muted); font-size:12px; display:block; }
+  .over-text { color:var(--bad); } .ahead-text { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td, th { padding:8px 6px; border-top:1px solid var(--line); text-align:left; vertical-align:middle; }
+  th { color:var(--muted); font-weight:600; border-top:0; }
+  td.amt { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.in { color:var(--ok); }
+  td select { padding:4px 6px; }
+  .uncat td { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .rule { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:6px; font-size:13px; color:var(--muted); }
+  .rule input { padding:4px 8px; min-width:180px; }
+  .rule button { padding:4px 10px; }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--bg);
+           padding:10px 16px; border-radius:8px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.show { opacity:1; }
+  .empty { text-align:center; padding:40px 16px; color:var(--muted); }
+  @media (max-width: 600px) { .cat { grid-template-columns: 1fr 120px; } .cat .track { grid-column: 1 / -1; order:3; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Budget</h1>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      <select id="month" aria-label="Month"></select>
+      <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
+      <button class="primary" id="importBtn">Import HSBC CSV</button>
+    </div>
+  </header>
+  <div id="app"></div>
+</main>
+<div id="toast"></div>
+
+<script>
+const gbp = p => (p < 0 ? '−' : '') + '£' + (Math.abs(p) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const $ = s => document.querySelector(s);
+let state = null;
+
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+
+async function load(month) {
+  const r = await fetch('/api/report' + (month ? '?month=' + month : ''));
+  state = await r.json();
+  render();
+}
+
+// Suggest a rule from the description: drop card refs, store numbers, dates.
+function suggestRule(desc) {
+  return desc.toUpperCase().replace(/\b\d[\d\/\-*]*\b/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 2).join(' ');
+}
+
+function render() {
+  const s = state;
+  $('#month').innerHTML = (s.months.length ? s.months : [s.month]).map(m =>
+    `<option value="${m}" ${m === s.month ? 'selected' : ''}>${new Date(m + '-01').toLocaleDateString('en-GB', { month:'long', year:'numeric' })}</option>`).join('');
+
+  if (!s.transactions.length) {
+    $('#app').innerHTML = `<div class="card empty">No transactions yet.<br>In HSBC online banking, open your current account, choose
+      <b>Download transactions</b>, pick <b>CSV</b>, then click <b>Import HSBC CSV</b> above.</div>`;
+    return;
+  }
+
+  const uncat = s.transactions.filter(t => t.category === 'Uncategorised').length;
+  const reg = s.regular;
+  const tiles = `
+    <div class="tiles">
+      <div class="tile"><div class="label">Money in</div><div class="value">${gbp(s.income)}</div></div>
+      <div class="tile"><div class="label">Spent</div><div class="value">${gbp(s.totalOut)}</div></div>
+      <div class="tile"><div class="label">Regular bills a month</div><div class="value">${gbp(reg.monthlyTotal)}</div></div>
+      <div class="tile"><div class="label">${uncat ? 'Need a category' : 'In vs out'}</div>
+        <div class="value ${uncat ? 'ahead-text' : (s.net < 0 ? 'over-text' : '')}">${uncat ? uncat : gbp(s.net)}</div></div>
+    </div>`;
+
+  const catRow = c => {
+    if (c.target != null) {
+      const pct = Math.min(100, (c.spent / Math.max(c.target, 1)) * 100);
+      const pace = s.isCurrent ? `<div class="pace" style="left:${s.fractionGone * 100}%" title="Where you'd be at an even pace"></div>` : '';
+      const sub = c.status === 'over' ? `<span class="over-text">${gbp(-c.remaining)} over</span>`
+        : c.status === 'ahead' ? `<span class="ahead-text">${gbp(c.remaining)} left · ahead of pace</span>`
+        : `${gbp(c.remaining)} left`;
+      return `<div class="cat"><div>${esc(c.name)}</div>
+        <div class="track"><div class="fill ${c.status}" style="width:${pct}%"></div>${pace}</div>
+        <div class="nums">${gbp(c.spent)} / ${gbp(c.target)}<span class="sub">${sub}</span></div></div>`;
+    }
+    const scale = Math.max(c.usual ?? 0, c.spent, 1);
+    const diff = c.usual != null ? c.spent - c.usual : null;
+    const sub = c.usual == null ? 'no history yet'
+      : !s.isCurrent && Math.abs(diff) > Math.max(2000, c.usual * 0.1)
+        ? `<span class="${diff > 0 ? 'ahead-text' : ''}">${gbp(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than usual</span>`
+        : `usual ${gbp(c.usual)}`;
+    const marker = c.usual ? `<div class="pace" style="left:${c.usual / scale * 100}%" title="Usual: ${gbp(c.usual)}"></div>` : '';
+    return `<div class="cat"><div>${esc(c.name)}</div>
+      <div class="track"><div class="fill none" style="width:${c.spent / scale * 100}%"></div>${marker}</div>
+      <div class="nums">${gbp(c.spent)}<span class="sub">${sub}</span></div></div>`;
+  };
+  const targetCats = s.categories.filter(c => c.target != null).map(catRow).join('');
+  const otherCats = s.categories.filter(c => c.target == null).map(catRow).join('');
+
+  const badge = p => ({
+    up: `<span class="ahead-text">up ${gbp(p.change)}</span>`,
+    down: `<span style="color:var(--ok)">down ${gbp(-p.change)}</span>`,
+    new: `<span class="ahead-text">new</span>`,
+    stopped: `<span style="color:var(--muted)">stopped?</span>`,
+  }[p.status] ?? '');
+  const ord = n => n + (['th','st','nd','rd'][(n % 100 - 20) % 10] || ['th','st','nd','rd'][n % 100] || 'th');
+  const regRows = reg.payments.map(p => `
+    <tr style="${p.status === 'stopped' ? 'opacity:.55' : ''}">
+      <td>${esc(p.name)}<div style="color:var(--muted);font-size:12px">${esc(p.category)} · around the ${ord(p.day)} · seen ${p.monthsSeen} months</div></td>
+      <td class="amt">${gbp(p.last)}<div style="font-size:12px">${badge(p)}</div></td>
+    </tr>`).join('');
+  const regCard = reg.payments.length
+    ? `<div class="card"><h2>Regular payments</h2>
+        <p style="margin:-4px 0 12px;color:var(--muted);font-size:13px">Worked out from your transactions: anything paid most months at a similar amount. Latest amount shown.</p>
+        <table><tbody>${regRows}</tbody></table></div>`
+    : '';
+
+  const opts = cat => s.allCategories.map(c => `<option ${c === cat ? 'selected' : ''}>${esc(c)}</option>`).join('') + '<option value="__new">+ New category…</option>';
+  const rows = s.transactions.map(t => `
+    <tr class="${t.category === 'Uncategorised' ? 'uncat' : ''}" data-id="${t.id}" data-desc="${esc(t.description)}">
+      <td style="white-space:nowrap">${new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}</td>
+      <td>${esc(t.description)}<div class="rule-slot"></div></td>
+      <td><select class="catSel">${opts(t.category)}</select></td>
+      <td class="amt ${t.amount > 0 ? 'in' : ''}">${gbp(t.amount)}</td>
+    </tr>`).join('');
+
+  $('#app').innerHTML = tiles +
+    (targetCats ? `<div class="card"><h2>Targets</h2>${targetCats}</div>` : '') +
+    `<div class="card"><h2>Everything else this month</h2>${otherCats}</div>` + regCard +
+    `
+     <div class="card"><h2>Transactions</h2><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+$('#app').addEventListener('change', async e => {
+  if (!e.target.classList.contains('catSel')) return;
+  const tr = e.target.closest('tr');
+  let category = e.target.value;
+  if (category === '__new') {
+    const slot = tr.querySelector('.rule-slot');
+    slot.innerHTML = `<div class="rule">New category: <input class="newCat" placeholder="e.g. Kids"><button class="saveNew">Add</button></div>`;
+    slot.querySelector('.newCat').focus();
+    return;
+  }
+  await saveCategory(tr, category);
+});
+
+$('#app').addEventListener('click', async e => {
+  const tr = e.target.closest('tr');
+  if (e.target.classList.contains('saveNew')) {
+    const v = tr.querySelector('.newCat').value.trim();
+    if (v) await saveCategory(tr, v);
+  }
+  if (e.target.classList.contains('saveRule')) {
+    const rule = tr.querySelector('.ruleText').value.trim();
+    const category = tr.querySelector('.ruleText').dataset.cat;
+    if (!rule) return;
+    await post('/api/category', { category, rule });
+    toast(`Anything containing “${rule}” is now ${category}`);
+    load(state.month);
+  }
+  if (e.target.classList.contains('skipRule')) tr.querySelector('.rule-slot').innerHTML = '';
+});
+
+async function saveCategory(tr, category) {
+  await post('/api/category', { id: Number(tr.dataset.id), category });
+  const r = await fetch('/api/report?month=' + state.month); state = await r.json();
+  render();
+  const row = document.querySelector(`tr[data-id="${tr.dataset.id}"]`);
+  row.querySelector('.rule-slot').innerHTML = `<div class="rule">Always use <b>${esc(category)}</b> for descriptions containing
+    <input class="ruleText" data-cat="${esc(category)}" value="${esc(suggestRule(tr.dataset.desc))}">
+    <button class="saveRule">Save rule</button><button class="skipRule">Just this one</button></div>`;
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error);
+  return j;
+}
+
+$('#importBtn').onclick = () => $('#file').click();
+$('#file').onchange = async e => {
+  let latest = null, added = 0, dup = 0;
+  for (const f of e.target.files) {
+    try {
+      const j = await post('/api/import', await f.text());
+      added += j.added; dup += j.duplicates;
+      if (!latest || j.latestMonth > latest) latest = j.latestMonth;
+    } catch (err) { toast(`${f.name}: ${err.message}`); return; }
+  }
+  e.target.value = '';
+  toast(`${added} new transactions${dup ? `, ${dup} already imported` : ''}`);
+  load(latest);
+};
+$('#month').onchange = e => load(e.target.value);
+load();
+</script>
+</body>
+</html>

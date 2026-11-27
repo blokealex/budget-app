@@ -1,0 +1,13 @@
+data/
+node_modules/
+.env
+
+# Your personal budgets and rules (examples are committed instead)
+config/budgets.json
+config/rules.json
+
+# Never commit real bank statements
+*.csv
+!test/*.csv
+
+.DS_Store

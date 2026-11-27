@@ -1,0 +1,12 @@
+{
+  "name": "budget-app",
+  "version": "0.1.0",
+  "description": "Personal budget tracker: import HSBC CSV statements, auto-categorise, budget vs actual.",
+  "type": "module",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node --no-warnings src/server.js",
+    "import": "node --no-warnings src/import-cli.js",
+    "test": "node --no-warnings --test test/*.test.js"
+  }
+}

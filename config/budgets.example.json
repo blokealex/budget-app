@@ -1,0 +1,6 @@
+{
+  "_note": "Targets in pounds per month, only for the categories you're actively trying to limit. Every other category shows actual spend against your usual (average of the last 3 months). _categories sets the display order.",
+  "_categories": ["House", "Debt", "Food", "Utilities", "Car", "Spending", "Entertainment", "Kids", "Annual", "Self Care"],
+  "Food": 500,
+  "Spending": 200
+}

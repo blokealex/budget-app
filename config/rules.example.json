@@ -1,0 +1,222 @@
+[
+  {
+    "match": "TESCO",
+    "category": "Food"
+  },
+  {
+    "match": "SAINSBURY",
+    "category": "Food"
+  },
+  {
+    "match": "ASDA",
+    "category": "Food"
+  },
+  {
+    "match": "ALDI",
+    "category": "Food"
+  },
+  {
+    "match": "LIDL",
+    "category": "Food"
+  },
+  {
+    "match": "MORRISONS",
+    "category": "Food"
+  },
+  {
+    "match": "CO-OP",
+    "category": "Food"
+  },
+  {
+    "match": "WAITROSE",
+    "category": "Food"
+  },
+  {
+    "match": "M&S SIMPLY FOOD",
+    "category": "Food"
+  },
+  {
+    "match": "MILK & MORE",
+    "category": "Food"
+  },
+  {
+    "match": "DELIVEROO",
+    "category": "Spending"
+  },
+  {
+    "match": "JUST EAT",
+    "category": "Spending"
+  },
+  {
+    "match": "UBER EATS",
+    "category": "Spending"
+  },
+  {
+    "match": "GREGGS",
+    "category": "Spending"
+  },
+  {
+    "match": "COSTA",
+    "category": "Spending"
+  },
+  {
+    "match": "STARBUCKS",
+    "category": "Spending"
+  },
+  {
+    "match": "PRET",
+    "category": "Spending"
+  },
+  {
+    "match": "SHELL",
+    "category": "Car"
+  },
+  {
+    "match": "ESSO",
+    "category": "Car"
+  },
+  {
+    "match": "BP ",
+    "category": "Car"
+  },
+  {
+    "match": "TESLA",
+    "category": "Car"
+  },
+  {
+    "match": "DVLA",
+    "category": "Car"
+  },
+  {
+    "match": "TFGM",
+    "category": "Car"
+  },
+  {
+    "match": "AA MEMBERSHIP",
+    "category": "Car"
+  },
+  {
+    "match": "NETFLIX",
+    "category": "Entertainment"
+  },
+  {
+    "match": "SPOTIFY",
+    "category": "Entertainment"
+  },
+  {
+    "match": "DISNEY",
+    "category": "Entertainment"
+  },
+  {
+    "match": "SKY DIGITAL",
+    "category": "Entertainment"
+  },
+  {
+    "match": "GUARDIAN",
+    "category": "Entertainment"
+  },
+  {
+    "match": "NATIONAL TRUST",
+    "category": "Entertainment"
+  },
+  {
+    "match": "APPLE.COM",
+    "category": "Entertainment"
+  },
+  {
+    "match": "AMAZON PRIME",
+    "category": "Entertainment"
+  },
+  {
+    "match": "AMZNPRIME",
+    "category": "Entertainment"
+  },
+  {
+    "match": "AMAZON",
+    "category": "Spending"
+  },
+  {
+    "match": "AMZN",
+    "category": "Spending"
+  },
+  {
+    "match": "COUNCIL TAX",
+    "category": "Utilities"
+  },
+  {
+    "match": "BRITISH GAS",
+    "category": "Utilities"
+  },
+  {
+    "match": "OCTOPUS",
+    "category": "Utilities"
+  },
+  {
+    "match": "UNITED UTILITIES",
+    "category": "Utilities"
+  },
+  {
+    "match": "BRSK",
+    "category": "Utilities"
+  },
+  {
+    "match": "VODAFONE",
+    "category": "Utilities"
+  },
+  {
+    "match": "EE LIMITED",
+    "category": "Utilities"
+  },
+  {
+    "match": "MORTGAGE",
+    "category": "House"
+  },
+  {
+    "match": "GYM",
+    "category": "Self Care"
+  },
+  {
+    "match": "PURE GYM",
+    "category": "Self Care"
+  },
+  {
+    "match": "SCOUT",
+    "category": "Kids"
+  },
+  {
+    "match": "SWIM",
+    "category": "Kids"
+  },
+  {
+    "match": "LOAN",
+    "category": "Debt"
+  },
+  {
+    "match": "BARCLAYCARD",
+    "category": "Debt"
+  },
+  {
+    "match": "HALIFAX",
+    "category": "Debt"
+  },
+  {
+    "match": "NATWEST",
+    "category": "Debt"
+  },
+  {
+    "match": "SANTANDER",
+    "category": "Debt"
+  },
+  {
+    "match": "VIRGIN MONEY",
+    "category": "Debt"
+  },
+  {
+    "match": "MBNA",
+    "category": "Debt"
+  },
+  {
+    "match": "CASH",
+    "category": "Spending"
+  }
+]
