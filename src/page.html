@@ -27,6 +27,14 @@
   .tile .value { font-size:24px; font-weight:650; font-variant-numeric:tabular-nums; margin-top:2px; }
   .cat { display:grid; grid-template-columns: 140px 1fr 150px; gap:12px; align-items:center; padding:7px 0; border-top:1px solid var(--line); }
   .cat:first-of-type { border-top:0; }
+  .cat.clickable { cursor:pointer; border-radius:6px; }
+  .cat.clickable:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .chev { display:inline-block; width:14px; color:var(--muted); transition:transform .15s; }
+  .cat.open .chev { transform:rotate(90deg); }
+  .cat-detail { margin:0 0 10px 14px; padding:4px 10px; border-left:2px solid var(--line); font-size:13px; }
+  .cat-detail table td { border-top:0; padding:4px 6px; }
+  .cat-detail td.d { color:var(--muted); white-space:nowrap; width:60px; }
+  .cat-detail .count, .cat-detail.empty { color:var(--muted); font-size:12px; padding:4px 6px; }
   .track { position:relative; height:10px; background:var(--bar); border-radius:5px; overflow:hidden; }
   .fill { position:absolute; inset:0 auto 0 0; border-radius:5px; background:var(--ok); }
   .fill.ahead { background:var(--warn); } .fill.over { background:var(--bad); } .fill.none { background:var(--muted); }
@@ -72,6 +80,7 @@ const gbp = p => (p < 0 ? '−' : '') + '£' + (Math.abs(p) / 100).toLocaleStrin
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const $ = s => document.querySelector(s);
 let state = null;
+const expanded = new Set(); // categories opened to show their transactions
 // Descriptions that don't say who was paid (e.g. "GOCARDLESS DD"), so rules use the amount too.
 const GENERIC = ['GOCARDLESS', 'PAYPAL', 'STRIPE', 'SUMUP', 'SQUARE'];
 
@@ -110,6 +119,18 @@ function render() {
         <div class="value ${uncat ? 'ahead-text' : (s.net < 0 ? 'over-text' : '')}">${uncat ? uncat : gbp(s.net)}</div></div>
     </div>`;
 
+  // The transactions behind a category, biggest first, shown when it's clicked.
+  const details = name => {
+    if (!expanded.has(name)) return '';
+    const txs = s.transactions.filter(t => t.category === name).sort((a, b) => a.amount - b.amount);
+    if (!txs.length) return `<div class="cat-detail empty">Nothing in ${esc(name)} this month.</div>`;
+    return `<div class="cat-detail"><table><tbody>${txs.map(t => `
+      <tr><td class="d">${new Date(t.date).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}</td>
+        <td>${esc(t.description)}</td>
+        <td class="amt ${t.amount > 0 ? 'in' : ''}">${gbp(-t.amount)}</td></tr>`).join('')}
+      </tbody></table><div class="count">${txs.length} transaction${txs.length === 1 ? '' : 's'}</div></div>`;
+  };
+
   const catRow = c => {
     if (c.target != null) {
       const pct = Math.min(100, (c.spent / Math.max(c.target, 1)) * 100);
@@ -117,9 +138,9 @@ function render() {
       const sub = c.status === 'over' ? `<span class="over-text">${gbp(-c.remaining)} over</span>`
         : c.status === 'ahead' ? `<span class="ahead-text">${gbp(c.remaining)} left · ahead of pace</span>`
         : `${gbp(c.remaining)} left`;
-      return `<div class="cat"><div>${esc(c.name)}</div>
+      return `<div class="cat clickable ${expanded.has(c.name) ? 'open' : ''}" data-cat="${esc(c.name)}" role="button" tabindex="0" aria-expanded="${expanded.has(c.name)}"><div><span class="chev">›</span>${esc(c.name)}</div>
         <div class="track"><div class="fill ${c.status}" style="width:${pct}%"></div>${pace}</div>
-        <div class="nums">${gbp(c.spent)} / ${gbp(c.target)}<span class="sub">${sub}</span></div></div>`;
+        <div class="nums">${gbp(c.spent)} / ${gbp(c.target)}<span class="sub">${sub}</span></div></div>${details(c.name)}`;
     }
     const scale = Math.max(c.usual ?? 0, c.spent, 1);
     const diff = c.usual != null ? c.spent - c.usual : null;
@@ -128,9 +149,9 @@ function render() {
         ? `<span class="${diff > 0 ? 'ahead-text' : ''}">${gbp(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than usual</span>`
         : `usual ${gbp(c.usual)}`;
     const marker = c.usual ? `<div class="pace" style="left:${c.usual / scale * 100}%" title="Usual: ${gbp(c.usual)}"></div>` : '';
-    return `<div class="cat"><div>${esc(c.name)}</div>
+    return `<div class="cat clickable ${expanded.has(c.name) ? 'open' : ''}" data-cat="${esc(c.name)}" role="button" tabindex="0" aria-expanded="${expanded.has(c.name)}"><div><span class="chev">›</span>${esc(c.name)}</div>
       <div class="track"><div class="fill none" style="width:${c.spent / scale * 100}%"></div>${marker}</div>
-      <div class="nums">${gbp(c.spent)}<span class="sub">${sub}</span></div></div>`;
+      <div class="nums">${gbp(c.spent)}<span class="sub">${sub}</span></div></div>${details(c.name)}`;
   };
   const targetCats = s.categories.filter(c => c.target != null).map(catRow).join('');
   const otherCats = s.categories.filter(c => c.target == null).map(catRow).join('');
@@ -183,6 +204,13 @@ $('#app').addEventListener('change', async e => {
 });
 
 $('#app').addEventListener('click', async e => {
+  const cat = e.target.closest('.cat[data-cat]');
+  if (cat) {
+    const name = cat.dataset.cat;
+    expanded.has(name) ? expanded.delete(name) : expanded.add(name);
+    render();
+    return;
+  }
   const tr = e.target.closest('tr');
   if (e.target.classList.contains('saveNew')) {
     const v = tr.querySelector('.newCat').value.trim();
@@ -236,6 +264,9 @@ $('#file').onchange = async e => {
   load(latest);
 };
 $('#month').onchange = e => load(e.target.value);
+$('#app').addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.cat[data-cat]')) { e.preventDefault(); e.target.click(); }
+});
 load();
 </script>
 </body>
