@@ -26,6 +26,17 @@ export function addRule(match, category, amount) {
   writeFileSync(RULES, JSON.stringify(rules, null, 2) + '\n');
 }
 
+// Adds a category you created in the app to budgets.json's _categories list.
+const SYSTEM = new Set(['Income', 'Transfers', 'Uncategorised']);
+export function addCategory(name) {
+  if (SYSTEM.has(name)) return;
+  const budgets = loadBudgets();
+  budgets._categories ??= [];
+  if (budgets._categories.includes(name)) return;
+  budgets._categories.push(name);
+  writeFileSync(BUDGETS, JSON.stringify(budgets, null, 2) + '\n');
+}
+
 // First rule whose text appears in the description wins.
 // Money in with no matching rule is "Income"; money out is "Uncategorised".
 export function makeCategoriser(rules = loadRules()) {

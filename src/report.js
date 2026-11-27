@@ -28,7 +28,7 @@ function usualSpend(db, month) {
   return usual;
 }
 
-export function monthReport(db, month, budgets, today = new Date()) {
+export function monthReport(db, month, budgets, today = new Date(), knownCategories = []) {
   const txs = monthTransactions(db, month);
   const spent = new Map();
   let income = 0, totalOut = 0;
@@ -42,7 +42,7 @@ export function monthReport(db, month, budgets, today = new Date()) {
 
   const order = budgets._categories ?? [];
   const targets = Object.fromEntries(Object.entries(budgets).filter(([k, v]) => !k.startsWith('_') && typeof v === 'number'));
-  const names = new Set([...order, ...Object.keys(targets), ...spent.keys()]);
+  const names = new Set([...order, ...Object.keys(targets), ...knownCategories.filter(c => c !== 'Uncategorised'), ...spent.keys()]);
   const usual = usualSpend(db, month);
 
   const [y, m] = month.split('-').map(Number);

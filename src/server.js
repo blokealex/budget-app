@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { parseStatement } from './csv.js';
 import { openDb, insertTransactions, recategoriseAll, setCategory, months } from './db.js';
-import { loadBudgets, makeCategoriser, addRule } from './config.js';
+import { loadBudgets, makeCategoriser, addRule, addCategory } from './config.js';
 import { monthReport } from './report.js';
 import { findRegularPayments } from './recurring.js';
 
@@ -40,10 +40,11 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/report') {
       const month = url.searchParams.get('month') ?? months(db)[0] ?? currentMonth();
       const budgets = loadBudgets();
-      const report = monthReport(db, month, budgets);
-      const cats = new Set([...(budgets._categories ?? []), ...Object.keys(budgets).filter(k => !k.startsWith('_'))]);
+      // Every category ever used, so ones you've created (e.g. "Work") are available in every month.
+      const used = db.prepare('SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL').all().map(r => r.category);
+      const report = monthReport(db, month, budgets, new Date(), used);
+      const cats = new Set([...(budgets._categories ?? []), ...Object.keys(budgets).filter(k => !k.startsWith('_')), ...used]);
       ['Income', 'Transfers', 'Uncategorised'].forEach(c => cats.add(c));
-      report.transactions.forEach(t => cats.add(t.category));
       return send(res, 200, { ...report, months: months(db), allCategories: [...cats].sort(),
         regular: findRegularPayments(db) });
     }
@@ -64,6 +65,7 @@ const server = createServer(async (req, res) => {
         recategoriseAll(db, makeCategoriser());
       }
       if (id) setCategory(db, id, category.trim());
+      addCategory(category.trim()); // remember new categories even if no transaction uses them later
       return send(res, 200, { ok: true });
     }
 
